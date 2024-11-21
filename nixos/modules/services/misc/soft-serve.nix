@@ -4,12 +4,38 @@ let
   configFile = format.generate "config.yaml" cfg.settings;
   format = pkgs.formats.yaml { };
   docUrl = "https://charm.sh/blog/self-hosted-soft-serve/";
+
+  hookTypes = lib.types.enum [ "post-receive" "post-update" "pre-receive" "update" ];
+  hookFormat = lib.types.nullOr lib.types.attrsOf lib.types.submodule {
+    options = lib.mkMerge (map (hookType: lib.attrSets.nameValuePair hookType (lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = "List of hooks to add for the repo";
+    })) hookTypes);
+  };
+
+  # L path/path(.d)/(storename) 700 soft-serve - - (storename)
+  # Need to flatten the attrset:attrset:list into one list
+  createHookFiles = mapAttrs (repoName: hooks:
+    mapAttrs ( hookType: hookContents:
+      map (content: "L ${cfg.stateDir}/${repoName}/hooks/${hooktype}.d/(somename) 700 soft-serve - - ${pkgs.writeText "" ${content}}") hookContents
+    ) hooks
+  ) cfg.ensureRepoHooks;
 in {
   options = {
     services.soft-serve = {
       enable = lib.mkEnableOption "soft-serve";
 
       package = lib.mkPackageOption pkgs "soft-serve" { };
+
+      ensureRepoHooks = lib.mkOption {
+        type = hookFormat;
+        default = null;
+        description = ''
+          Declarative assignment of hooks to repos.
+          The attrName is the name of the repo, which is used relative to ``${cfg.stateDir}``, and the value is an attrSet of your hooks, which can be of types ``${hooks}``, defined as lists of str.
+        '';
+      };
 
       settings = lib.mkOption {
         type = format.type;
@@ -50,7 +76,7 @@ in {
     systemd.tmpfiles.rules = [
       # The config file has to be inside the state dir
       "L+ ${cfg.stateDir}/config.yaml - - - - ${configFile}"
-    ];
+    ] ++ lib.mkIf !cfg.ensureRepoHooks (createHookFiles cfg.ensureRepoHooks);
 
     systemd.services.soft-serve = {
       description = "Soft Serve git server";
