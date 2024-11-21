@@ -4,9 +4,7 @@ let
   configFile = format.generate "config.yaml" cfg.settings;
   format = pkgs.formats.yaml { };
   docUrl = "https://charm.sh/blog/self-hosted-soft-serve/";
-  stateDir = "/var/lib/soft-serve";
-in
-{
+in {
   options = {
     services.soft-serve = {
       enable = lib.mkEnableOption "soft-serve";
@@ -35,6 +33,15 @@ in
           }
         '';
       };
+
+      stateDir = lib.mkOption {
+        type = lib.types.str;
+        default = "/var/lib/soft-serve";
+        description = ''
+          Location for soft-serve to store repos, hooks etc.
+        '';
+        example = "/mnt/soft-serve";
+      };
     };
   };
 
@@ -42,7 +49,7 @@ in
 
     systemd.tmpfiles.rules = [
       # The config file has to be inside the state dir
-      "L+ ${stateDir}/config.yaml - - - - ${configFile}"
+      "L+ ${cfg.stateDir}/config.yaml - - - - ${configFile}"
     ];
 
     systemd.services.soft-serve = {
@@ -52,7 +59,7 @@ in
       after = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      environment.SOFT_SERVE_DATA_PATH = stateDir;
+      environment.SOFT_SERVE_DATA_PATH = cfg.stateDir;
 
       serviceConfig = {
         Type = "simple";
@@ -60,7 +67,7 @@ in
         Restart = "always";
         ExecStart = "${getExe cfg.package} serve";
         StateDirectory = "soft-serve";
-        WorkingDirectory = stateDir;
+        WorkingDirectory = cfg.stateDir;
         RuntimeDirectory = "soft-serve";
         RuntimeDirectoryMode = "0750";
         ProcSubset = "pid";
